@@ -2,7 +2,7 @@ import numpy as np
 
 class poly_interp2d(object):
 
-    def __init__(x, y, z, cov=None, order=3):
+    def __init__(self, x, y, z, cov=None, order=3):
 
         self.x = x
         self.y = y
@@ -28,13 +28,20 @@ class poly_interp2d(object):
 
     def solve(self):
         X = self._build_polynomial_series(self.x, self.y)
-        T = np.dot(X.T, self.w.dot(X))
+        T = np.dot(X, self.w.dot(X.T))
         T_inv = np.linalg.inv(T)
-        B = np.dot(X.T, self.w.dot(np.matrix(self.z).T))
-        self.theta = (np.dot(T_inv, np.matrix(B).T)).T
+        B = np.dot(X, self.w.dot(np.matrix(self.z).T))
+        
+        self.theta = (np.dot(T_inv, np.matrix(B))).T
  
     def predict(self, x, y):
 
-        X = self._build_polynomial_series(self.x, self.y)
+        X = self._build_polynomial_series(x, y)
         z = np.dot(self.theta, X)
         return z
+
+
+
+
+
+            

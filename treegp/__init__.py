@@ -14,3 +14,4 @@ from .kernels import eval_kernel
 
 from .meanify import meanify
 
+from .poly import poly_interp2d
