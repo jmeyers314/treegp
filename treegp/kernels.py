@@ -7,7 +7,23 @@ from scipy.spatial.distance import cdist
 from sklearn.gaussian_process.kernels import StationaryKernelMixin, NormalizedKernelMixin, Kernel
 from sklearn.gaussian_process.kernels import Hyperparameter
 from sklearn.gaussian_process.kernels import _check_length_scale
+from saunerie import bspline
 
+def return_var_map(weight, xi):
+    N = int(np.sqrt(len(xi)))
+    var = np.diag(np.linalg.inv(weight))
+    VAR = np.zeros(N*N)
+    I = 0
+    for i in range(N*N):
+        if xi[i] !=0:
+            VAR[i] = var[I]
+            I+=1
+        if I == len(var):
+            break
+    VAR = VAR.reshape(N,N) + np.flipud(np.fliplr(VAR.reshape(N,N)))
+    if N%2 == 1:
+        VAR[N/2, N/2] /= 2.
+    return VAR
 
 def eval_kernel(kernel):
     """
@@ -390,3 +406,100 @@ class AnisotropicVonKarman(StationaryKernelMixin, NormalizedKernelMixin, Kernel)
     @property
     def bounds(self):
         return self._bounds
+
+class Spline2D(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
+
+    def __init__(self, pcf_x=None, pcf_y=None, pcf=None,
+                 weight=None, order=4,
+                 nx=11, ny=11, limit=980.):
+
+        # 2-point correlation functions, output
+        # of TreeCorr using 2D fit.
+        self.pcf_x = pcf_x
+        self.pcf_y = pcf_y
+        self.pcf = pcf
+        if weight is None:
+            self.var = np.ones_like(self.pcf)
+        else:
+            self.var = return_var_map(weight, pcf).flatten()
+
+        # Spline params for saunerie.
+        self.order = order
+        self.nx = nx
+        self.ny = ny
+        self.limit = limit
+        self.bs = bspline.CardinalBSpline2D(nx=self.nx, ny=self.ny,
+                                            x_range=(-self.limit, self.limit),
+                                            y_range=(-self.limit, self.limit),
+                                            x_order=self.order, y_order=self.order)
+        # hyperparamaters
+        self._theta = []
+        self._J = None
+
+    def init_pcf(self, pcf_x, pcf_y, pcf, weight=None):
+
+        self.pcf_x = pcf_x
+        self.pcf_y = pcf_y
+        self.pcf = pcf
+        if weight is not None:
+            self.var = return_var_map(weight, pcf).flatten()
+
+    def linear_brut(self, J, y, w=None):
+        if w is None:
+            w = np.eye(len(y))
+        else:
+            w = np.eye(len(w)) * w
+        X = J.todense()
+        T = np.dot(X.T, w.dot(X))
+        T_inv = np.linalg.inv(T)
+        B = np.dot(X.T, w.dot(np.matrix(y).T))
+        return np.array((np.dot(T_inv, np.matrix(B))).T).squeeze()
+
+    def solve(self):
+        self._J = self.bs.eval(self.pcf_x, self.pcf_y)
+        self._theta = self.linear_brut(self._J, self.pcf, w=1./self.var)
+
+    def _get_2pcf_predict(self):
+        return self._J * self._theta
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+
+        if eval_gradient:
+                raise ValueError("Gradient can not be evaluated.")
+
+        if Y is None:
+            ind = np.linspace(0, len(X[:,0])-1, len(X[:,0])).astype(int)
+            i1, i2 = np.meshgrid(ind, ind)
+            yshift = X[:,1][i2]-X[:,1][i1]
+            xshift = X[:,0][i2]-X[:,0][i1]
+        else:
+            ind1 = np.linspace(0, len(X[:,0])-1, len(X[:,0])).astype(int)
+            ind2 = np.linspace(0, len(Y[:,0])-1, len(Y[:,0])).astype(int)
+            i1, i2 = np.meshgrid(ind1, ind2)
+            yshift = Y[:,1][i2]-X[:,1][i1]
+            xshift = Y[:,0][i2]-X[:,0][i1]
+
+        K = np.zeros_like(xshift)
+        self.xshift = xshift
+        self.yshift = yshift
+        for i in range(len(xshift[:,0])):
+            # set to zero covariance when outside the box of
+            # spline definition.
+            filtre = ((abs(xshift[i]) < self.limit) & (abs(yshift[i]) < self.limit))
+            jgp = self.bs.eval(xshift[i][filtre], yshift[i][filtre])
+            K[i][filtre] = jgp * self._theta
+
+        if Y is None:
+            # Due to the spline interp, I am not sure that
+            # the kernel is symetric, so to be sure,
+            # I am making it symetric.
+            K = (K + K.T) / 2.
+        return K
+
+    @property
+    def theta(self):
+        return self._theta
+
+    @theta.setter
+    def theta(self, theta):
+        self._theta = theta

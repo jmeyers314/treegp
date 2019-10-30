@@ -10,8 +10,7 @@ from .log_likelihood import log_likelihood
 from .kernels import AnisotropicRBF
 from .kernels import VonKarman
 from .kernels import AnisotropicVonKarman
+from .kernels import Spline2D
 from .kernels import eval_kernel
 
 from .meanify import meanify
-
-from .poly import poly_interp2d

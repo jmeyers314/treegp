@@ -72,6 +72,12 @@ class GPInterpolation(object):
         if self.optimizer not in ['two-pcf', 'log-likelihood']:
             raise ValueError("Only two-pcf and log-likelihood are supported for optimizer. Current value: %s"%(self.optimizer))
 
+        if self.kernel_template.__class__ == treegp.kernels.Spline2D:
+            if self.optimizer == 'log-likelihood':
+                raise ValueError("Spline 2D kernel must work only with two-pcf optimizer.")
+            if not self.anisotropic:
+                raise ValueError("Spline 2D kernel works only with anisotropic two-pcf for the moment.")
+
         if average_fits is not None:
             import fitsio
             average = fitsio.read(average_fits)

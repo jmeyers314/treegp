@@ -296,38 +296,48 @@ class two_pcf(object):
 
         xi, xi_weight, distance, coord, mask = self.return_2pcf()
 
-        def PCF(param, k=kernel):
-            kernel = k.clone_with_theta(param)
-            pcf = kernel.__call__(coord,Y=np.zeros_like(coord))[:,0]
-            return pcf
-
-        xi_mask = xi[mask]
-        def chi2(param):
-            residual = xi_mask - PCF(param)[mask]
-            return residual.dot(xi_weight.dot(residual))
-
-        if self.robust_fit:
-            robust = robust_2dfit(kernel, xi,
-                                  coord[:,0], coord[:,1], 
-                                  xi_weight, mask=mask)
-            robust.minimize_minuit(p0=self.p0_robust_fit)
-            kernel = copy.deepcopy(robust.kernel_fit)
-            cst = robust.result[-1]
+        # for spline 2d kernel, solution is analytical,
+        # just need to solve a linear system to find
+        # hyperparameters.
+        if kernel.__class__ == treegp.kernels.Spline2D:
+            kernel.init_pcf(distance[:,0], distance[:,1],
+                            xi, weight=xi_weight)
+            kernel.solve()
+            self._2pcf_fit = kernel._get_2pcf_predict()
         else:
-            p0 = kernel.theta
-            results_fmin = optimize.fmin(chi2,p0,disp=False)
-            results_bfgs = optimize.minimize(chi2,p0,method="L-BFGS-B")
-            results = [results_fmin, results_bfgs['x']]
-            chi2_min = [chi2(results[0]), chi2(results[1])]
-            ind_min = chi2_min.index(min(chi2_min))
-            results = results[ind_min]
-            kernel = kernel.clone_with_theta(results)
-            cst = 0
+            def PCF(param, k=kernel):
+                kernel = k.clone_with_theta(param)
+                pcf = kernel.__call__(coord,Y=np.zeros_like(coord))[:,0]
+                return pcf
+
+            xi_mask = xi[mask]
+            def chi2(param):
+                residual = xi_mask - PCF(param)[mask]
+                return residual.dot(xi_weight.dot(residual))
+
+            if self.robust_fit:
+                robust = robust_2dfit(kernel, xi,
+                                      coord[:,0], coord[:,1],
+                                      xi_weight, mask=mask)
+                robust.minimize_minuit(p0=self.p0_robust_fit)
+                kernel = copy.deepcopy(robust.kernel_fit)
+                cst = robust.result[-1]
+            else:
+                p0 = kernel.theta
+                results_fmin = optimize.fmin(chi2,p0,disp=False)
+                results_bfgs = optimize.minimize(chi2,p0,method="L-BFGS-B")
+                results = [results_fmin, results_bfgs['x']]
+                chi2_min = [chi2(results[0]), chi2(results[1])]
+                ind_min = chi2_min.index(min(chi2_min))
+                results = results[ind_min]
+                kernel = kernel.clone_with_theta(results)
+                cst = 0
+
+            self._2pcf_fit = PCF(kernel.theta) + cst
 
         self._2pcf = xi
         self._2pcf_weight = xi_weight
         self._2pcf_dist = distance
-        self._2pcf_fit = PCF(kernel.theta) + cst
         self._2pcf_mask = mask
         self._kernel = copy.deepcopy(kernel)
         return kernel
