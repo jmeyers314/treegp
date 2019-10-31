@@ -7,7 +7,7 @@ from scipy.spatial.distance import cdist
 from sklearn.gaussian_process.kernels import StationaryKernelMixin, NormalizedKernelMixin, Kernel
 from sklearn.gaussian_process.kernels import Hyperparameter
 from sklearn.gaussian_process.kernels import _check_length_scale
-from saunerie import bspline
+from .bspline import CardinalBSpline2D
 
 def return_var_map(weight, xi):
     N = int(np.sqrt(len(xi)))
@@ -428,10 +428,10 @@ class Spline2D(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
         self.nx = nx
         self.ny = ny
         self.limit = limit
-        self.bs = bspline.CardinalBSpline2D(nx=self.nx, ny=self.ny,
-                                            x_range=(-self.limit, self.limit),
-                                            y_range=(-self.limit, self.limit),
-                                            x_order=self.order, y_order=self.order)
+        self.bs = CardinalBSpline2D(nx=self.nx, ny=self.ny,
+                                    x_range=(-self.limit, self.limit),
+                                    y_range=(-self.limit, self.limit),
+                                    x_order=self.order, y_order=self.order)
         # hyperparamaters
         self._theta = []
         self._J = None

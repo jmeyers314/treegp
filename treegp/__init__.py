@@ -14,3 +14,5 @@ from .kernels import Spline2D
 from .kernels import eval_kernel
 
 from .meanify import meanify
+
+from .bspline import CardinalBSpline2D

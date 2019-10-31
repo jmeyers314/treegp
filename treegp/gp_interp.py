@@ -145,9 +145,16 @@ class GPInterpolation(object):
         """
         HT = kernel.__call__(X2, Y=X1)
         K = kernel.__call__(X1) + np.eye(len(y))*y_err**2
-        factor = (cholesky(K, overwrite_a=True, lower=False), False)
-        alpha = cho_solve(factor, y, overwrite_b=False)
-        y_predict = np.dot(HT,alpha.reshape((len(alpha),1))).T[0] 
+
+        if self.kernel_template.__class__ == treegp.kernels.Spline2D:
+            K_inv = np.linalg.inv(K)
+            HT = HT.T
+            y_predict = HT.dot(np.dot(K_inv, y.reshape((len(K_inv), 1))))
+            y_predict = y_predict.squeeze()
+        else:
+            factor = (cholesky(K, overwrite_a=True, lower=False), False)
+            alpha = cho_solve(factor, y, overwrite_b=False)
+            y_predict = np.dot(HT,alpha.reshape((len(alpha),1))).T[0] 
         if return_cov:
             fact = cholesky(K, lower=True) # I am computing maybe twice the same things...
             v = cho_solve((fact, True), HT.T)

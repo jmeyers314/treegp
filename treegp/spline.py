@@ -1,7 +1,7 @@
 import numpy as np
 import pylab as plt
 import cPickle
-from saunerie import bspline
+import treegp
 
 def plot_correlation_function(interp, save=False, rep='',
                               specific_name_kernel='VK', NAME='du', exp='0', other_fit=None):
@@ -165,20 +165,36 @@ class interp_dic(object):
 
 if __name__ == "__main__":
 
-    dic = cPickle.load(open('../../astrometry/tests/137108_z/gp_output_137108.pkl'))
+    dic = cPickle.load(open('../../astrometry/tests/before_spline/137108_z/gp_output_137108.pkl'))
     interp = interp_dic(dic, key='gpu')
     
-    spline = spline2D_hyp_search(interp._2pcf_dist[:,0], interp._2pcf_dist[:,1],
-                                 interp._2pcf, weight=interp._2pcf_weight,
-                                 order=4, nx=11, ny=11, 
-                                 limit=980.)
+    #spline = spline2D_hyp_search(interp._2pcf_dist[:,0], interp._2pcf_dist[:,1],
+    #                             interp._2pcf, weight=interp._2pcf_weight,
+    #                             order=4, nx=11, ny=11, 
+    #                             limit=980.)
+
+    Kernel = "Spline2D(order=4, nx=5, ny=5, limit=980.)"
+    spline = treegp.eval_kernel(Kernel)
+    spline.init_pcf(interp._2pcf_dist[:,0], interp._2pcf_dist[:,1], 
+                    interp._2pcf, weight=interp._2pcf_weight)
     spline.solve()
     znew = spline._get_2pcf_predict()
 
-    var = return_var_map(interp._2pcf_weight, interp._2pcf)
+    #var = return_var_map(interp._2pcf_weight, interp._2pcf)
     plot_correlation_function(interp, other_fit=znew, specific_name_kernel='Cubic spline')
 
     X = np.array([dic['input_data']['u'], dic['input_data']['v']]).T
-    K = spline.__call__(X)
+    ##plt.figure(figsize=(8, 8))
+    ##plt.imshow(K, vmin=-22, vmax=22, cmap=plt.cm.seismic)
+
+    np.random.seed(42)
+    x = np.random.uniform(-900, 900, size=2000)
+    y = np.random.uniform(-900, 900, size=2000)
+    Y = np.array([x, y]).T
+    H = spline.__call__(X, Y=Y)
     plt.figure(figsize=(8, 8))
-    plt.imshow(K, vmin=-22, vmax=22, cmap=plt.cm.seismic)
+    plt.imshow(H, vmin=-22, vmax=22, cmap=plt.cm.seismic)
+
+    K = spline.__call__(X) + np.eye(len(dic['input_data']['du_err']))*dic['input_data']['du_err']**2
+    K_inv = np.linalg.inv(K)
+    interpolation = H.dot(np.dot(K_inv, dic['input_data']['du'].reshape((len(K_inv), 1))))
