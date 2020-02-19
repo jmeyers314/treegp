@@ -457,7 +457,46 @@ class Spline2D(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
 
     def solve(self):
         self._J = self.bs.eval(self.pcf_x, self.pcf_y)
-        self._theta = self.linear_brut(self._J, self.pcf, w=1./self.var)
+
+        ## Try to make it positive definite by going in 
+        ## in Fourier space.
+        from scipy import fftpack
+        N = int(np.sqrt(len(self.pcf)))
+        ps = fftpack.fft2(self.pcf.reshape((N, N)))
+        ps = fftpack.fftshift(ps)
+        ps = abs(ps)
+        ps = ps.reshape(N**2)
+
+        def _smooth(y, kernel='RBF(2.5)', limit = 9.):
+            import treegp
+            N = int(np.sqrt(len(y)))
+            Filtre = y > np.max(y)/100. * limit
+            noise_level = np.std(y[~Filtre])
+            y[~Filtre] = 0
+            X = np.linspace(0., len(y)-1., len(y)).reshape((len(y),1))
+
+            gp = treegp.GPInterpolation(kernel=kernel, optimize=False,
+                                        optimizer='two-pcf', anisotropic=True,
+                                        normalize=False, nbins=42, min_sep=0.,
+                                        max_sep=42, robust_fit=True,
+                                        p0=None)
+            gp.initialize(X, y, y_err=np.ones_like(y)*noise_level)
+            gp.solve()
+            predict = gp.predict(X, return_cov=False)
+            Filtre = predict>0
+            predict[~Filtre] = 0
+            return predict.reshape((N,N))
+
+        ps_predict = _smooth(ps, kernel='RBF(2.)', limit = 9.)
+        pcf_clean = fftpack.ifft2(ps_predict)
+        pcf_clean = fftpack.fftshift(pcf_clean)
+        pcf_clean = abs(pcf_clean)
+        pcf_clean = pcf_clean.reshape(N**2)
+        pcf_clean = _smooth(pcf_clean, kernel='RBF(2.)', limit = 8.)
+        pcf_clean = pcf_clean.reshape(N**2)
+
+        #self._theta = self.linear_brut(self._J, self.pcf, w=1./self.var)
+        self._theta = self.linear_brut(self._J, pcf_clean, w=1./self.var)
 
     def _get_2pcf_predict(self):
         return self._J * self._theta
